@@ -95,8 +95,21 @@ function validateYouTubeInput(input: string): { valid: boolean; videoId?: string
 
   const trimmed = input.trim();
 
-  // If it looks like a URL, validate as URL
+  // Sanitize input - remove any potentially dangerous characters
+  if (trimmed.includes('\0') || trimmed.includes('\n') || trimmed.includes('\r')) {
+    return { valid: false, error: 'Invalid characters in input' };
+  }
+
+  // If it looks like a URL, perform additional validation
   if (trimmed.includes('://') || trimmed.includes('www.')) {
+    // Check if it's a YouTube domain
+    const isYouTube = trimmed.includes('youtube.com') || trimmed.includes('youtu.be');
+
+    if (!isYouTube) {
+      return { valid: false, error: 'Only YouTube URLs are supported' };
+    }
+
+    // Additional URL validation using validator (with our extra checks for safety)
     if (!validator.isURL(trimmed, { protocols: ['http', 'https'], require_protocol: false })) {
       return { valid: false, error: 'Invalid URL format' };
     }
@@ -208,8 +221,9 @@ async function fetchYoutubeTranscript(videoId: string): Promise<TranscriptItem[]
 
     console.log(`Successfully fetched ${result.transcript?.length || 0} transcript segments`);
     return result.transcript || [];
-  } catch (error: any) {
-    console.error('Error in fetchYoutubeTranscript:', error.message);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Error in fetchYoutubeTranscript:', errorMessage);
     throw error;
   }
 }
@@ -324,11 +338,12 @@ app.get('/api/transcript', async (req: Request, res: Response) => {
       transcript,
       videoId,
     });
-  } catch (error: any) {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to fetch transcript. Please make sure the video exists and has captions available.';
     console.error('Error fetching transcript:', error);
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to fetch transcript. Please make sure the video exists and has captions available.',
+      error: errorMessage,
     });
   }
 });
@@ -397,11 +412,12 @@ app.post('/api/enhance', async (req: Request, res: Response) => {
       success: true,
       transcript: corrected,
     });
-  } catch (error: any) {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to fact-check transcript';
     console.error('Fact-check error:', error);
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to fact-check transcript',
+      error: errorMessage,
     });
   }
 });
@@ -431,7 +447,7 @@ app.use((_req: Request, res: Response) => {
 /**
  * Global error handler
  */
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+app.use((err: Error, _req: Request, res: Response) => {
   console.error('Unhandled error:', err);
   res.status(500).json({
     success: false,
